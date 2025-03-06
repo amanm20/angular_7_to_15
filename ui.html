@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AltNode Generator</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 16px;
+    }
+    button {
+      margin-bottom: 16px;
+      padding: 8px 16px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #output {
+      border: 1px solid #ccc;
+      padding: 12px;
+      max-height: 300px;
+      overflow: auto;
+      white-space: pre-wrap;
+      background: #f8f8f8;
+    }
+  </style>
+</head>
+<body>
+  <h2>AltNode Generator</h2>
+  <button id="generateBtn">Generate AltNode</button>
+  <div id="output">Output will appear here...</div>
+
+  <script>
+    // When the button is clicked, send a message to the plugin code.
+    document.getElementById("generateBtn").addEventListener("click", () => {
+      parent.postMessage({ pluginMessage: { type: "export-alt-node" } }, "*");
+    });
+
+    // Listen for messages from the plugin.
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (msg.type === "display-alt-nodes") {
+        // Display the AltNode JSON in the output div.
+        document.getElementById("output").textContent = JSON.stringify(msg.altNodes, null, 2);
+      }
+    };
+  </script>
+</body>
+</html>
