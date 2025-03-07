@@ -4,6 +4,14 @@
 // Interfaces & Type Definitions
 // -----------------------
 
+interface MyTextDecoder {
+  decode(input?: Uint8Array): string;
+}
+
+declare var TextDecoder: {
+  new (encoding?: string): MyTextDecoder;
+};
+
 interface Position {
   x: number;
   y: number;
@@ -59,6 +67,7 @@ interface AltNode {
   typography?: Typography;
   styles?: Styles;
   text?: string;
+  svgData?: string;
   children: AltNode[];
 }
 
@@ -217,6 +226,16 @@ async function createAltNode(node: SceneNode): Promise<AltNode> {
     altNode.typography = await extractTypography(node as TextNode);
   }
   
+   // Only for VECTOR nodes export as SVG.
+   if (node.type === "VECTOR") {
+    try {
+      const svgBytes = await node.exportAsync({ format: "SVG" });
+      altNode.svgData = new TextDecoder("utf-8").decode(svgBytes);
+    } catch (error) {
+      console.error("Error exporting SVG for node", node.id, error);
+    }
+  }
+
   // Recursively process children if they exist.
   if ("children" in node && node.children) {
     for (const child of node.children) {
