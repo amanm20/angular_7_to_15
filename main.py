@@ -110,6 +110,12 @@ def generate_node_html_css(node: Dict, css_rules: Dict[str, Dict[str, str]]) -> 
         if "textAlign" in typo:
             styles["text-align"] = typo["textAlign"]
     
+    # --- New logic: Override container style for VECTOR nodes with inline SVG ---
+    if node_type == "VECTOR" and node.get("svgData"):
+        # Remove background and border so that only the SVG shows.
+        styles.pop("background-color", None)
+        styles.pop("border", None)
+        
     # Accumulate styles into the CSS rules dictionary.
     css_rules[node_id] = styles
     
