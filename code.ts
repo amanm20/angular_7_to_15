@@ -4,14 +4,6 @@
 // Interfaces & Type Definitions
 // -----------------------
 
-interface MyTextDecoder {
-  decode(input?: Uint8Array): string;
-}
-
-declare var TextDecoder: {
-  new (encoding?: string): MyTextDecoder;
-};
-
 interface Position {
   x: number;
   y: number;
@@ -72,11 +64,24 @@ interface AltNode {
 }
 
 // -----------------------
+// UTF-8 Decoding Helper
+// -----------------------
+function decodeUTF8(uint8Array: Uint8Array): string {
+  let rawString = "";
+  for (let i = 0; i < uint8Array.length; i++) {
+    rawString += String.fromCharCode(uint8Array[i]);
+  }
+  try {
+    return decodeURIComponent(escape(rawString));
+  } catch (err) {
+    console.error("UTF-8 decoding error:", err);
+    return rawString;
+  }
+}
+
+// -----------------------
 // Utility Functions
 // -----------------------
-
-// Convert a Figma RGB color (0-1 values) to an rgba() string.
-// The Figma RGB type only has r, g, and b. Use the optional opacity parameter.
 function rgbaToString(color: RGB, opacity?: number): string {
   const r = Math.round(color.r * 255);
   const g = Math.round(color.g * 255);
@@ -89,12 +94,10 @@ function rgbaToString(color: RGB, opacity?: number): string {
 // Extraction Functions
 // -----------------------
 
-// Extract typography information from a TextNode.
 async function extractTypography(node: TextNode): Promise<Typography> {
   await figma.loadFontAsync(node.fontName as FontName);
   const font = node.fontName as FontName;
 
-  // Use valueOf() for non-number lineHeight.
   let lineHeightStr: string;
   if (typeof node.lineHeight === "number") {
     lineHeightStr = `${node.lineHeight}px`;
@@ -103,7 +106,6 @@ async function extractTypography(node: TextNode): Promise<Typography> {
     lineHeightStr = `${lh.value}${lh.unit.toLowerCase()}`;
   }
 
-  // Use valueOf() for non-number letterSpacing.
   let letterSpacingStr: string;
   if (typeof node.letterSpacing === "number") {
     letterSpacingStr = `${node.letterSpacing}px`;
@@ -122,7 +124,6 @@ async function extractTypography(node: TextNode): Promise<Typography> {
   };
 }
 
-// Extract layout details for nodes that support auto-layout.
 function extractLayout(node: SceneNode): Layout | undefined {
   if ("layoutMode" in node && node.layoutMode !== "NONE") {
     let padding: string | undefined;
@@ -138,11 +139,9 @@ function extractLayout(node: SceneNode): Layout | undefined {
   return { display: "block" };
 }
 
-// Extract style properties like fills, strokes, shadows, and opacity.
 function extractStyles(node: SceneNode): Styles | undefined {
   const styles: Styles = {};
   
-  // Background / fills extraction
   if ("fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
     const fill = node.fills[0] as Paint;
     if (fill.type === "SOLID") {
@@ -150,12 +149,10 @@ function extractStyles(node: SceneNode): Styles | undefined {
     }
   }
   
-  // Border extraction
   if ("strokes" in node && Array.isArray(node.strokes) && node.strokes.length > 0) {
     const stroke = node.strokes[0] as Paint;
     if (stroke.type === "SOLID") {
       let radius = "";
-      // Use a type guard for nodes that support corner radius.
       if ("cornerRadius" in node && typeof (node as any).cornerRadius === "number") {
         radius = `${(node as any).cornerRadius}px`;
       } else if ("topLeftRadius" in node) {
@@ -170,15 +167,9 @@ function extractStyles(node: SceneNode): Styles | undefined {
     }
   }
   
-  // Shadow extraction: look for DROP_SHADOW effect
   if ("effects" in node && Array.isArray(node.effects)) {
     const dropShadow = node.effects.find(e => e.type === "DROP_SHADOW" && e.visible);
-    if (
-      dropShadow &&
-      "offset" in dropShadow &&
-      "color" in dropShadow &&
-      "radius" in dropShadow
-    ) {
+    if (dropShadow && "offset" in dropShadow && "color" in dropShadow && "radius" in dropShadow) {
       const ds = dropShadow as {
         offset: { x: number; y: number };
         color: RGB;
@@ -193,7 +184,6 @@ function extractStyles(node: SceneNode): Styles | undefined {
     }
   }
   
-  // Opacity extraction
   if ("opacity" in node) {
     styles.opacity = node.opacity;
   }
@@ -201,45 +191,46 @@ function extractStyles(node: SceneNode): Styles | undefined {
   return styles;
 }
 
-// Recursively extract an AltNode from any SceneNode.
 async function createAltNode(node: SceneNode): Promise<AltNode> {
   const altNode: AltNode = {
     id: node.id,
     type: node.type,
     name: node.name,
-    position: {
-      x: node.x,
-      y: node.y
-    },
-    dimensions: {
-      width: node.width,
-      height: node.height
-    },
+    position: { x: node.x, y: node.y },
+    dimensions: { width: node.width, height: node.height },
     layout: extractLayout(node),
     styles: extractStyles(node),
     children: []
   };
 
-  // If the node is a TextNode, extract its text content and typography details.
   if (node.type === "TEXT") {
     altNode.text = (node as TextNode).characters;
     altNode.typography = await extractTypography(node as TextNode);
   }
   
-   // Only for VECTOR nodes export as SVG.
-   if (node.type === "VECTOR") {
+  // For VECTOR nodes, try exporting as SVG.
+  if (node.type === "VECTOR") {
     try {
       const svgBytes = await node.exportAsync({ format: "SVG" });
-      altNode.svgData = new TextDecoder("utf-8").decode(svgBytes);
+      const svgString = decodeUTF8(svgBytes);
+      if (svgString.trim().length > 0) {
+        altNode.svgData = svgString;
+        console.log("SVG exported for node", node.id, svgString);
+      } else {
+        console.warn("SVG export returned empty for node", node.id);
+      }
     } catch (error) {
       console.error("Error exporting SVG for node", node.id, error);
     }
   }
 
-  // Recursively process children if they exist.
+  // Recursively process children, skipping hidden ones
   if ("children" in node && node.children) {
     for (const child of node.children) {
-      altNode.children.push(await createAltNode(child));
+      const childAltNode = await createAltNode(child);
+      if (childAltNode) {
+        altNode.children.push(childAltNode);
+      }
     }
   }
   
@@ -258,16 +249,12 @@ figma.ui.onmessage = async (msg) => {
         return;
       }
       
-      // Build AltNodes from each selected node.
       const altNodes: AltNode[] = [];
       for (const node of selection) {
         altNodes.push(await createAltNode(node));
       }
       
-      // Send the AltNode JSON back to the UI with a distinct message type.
       figma.ui.postMessage({ type: "display-alt-nodes", altNodes });
-      
-      // Optional user feedback.
       figma.notify("AltNode generated! Check the UI panel for JSON.");
     } catch (error) {
       figma.notify("Error: " + JSON.stringify(error, null, 2));
@@ -276,7 +263,3 @@ figma.ui.onmessage = async (msg) => {
 };
 
 figma.showUI(__html__, { width: 400, height: 600 });
-
-
-
-
